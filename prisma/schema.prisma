@@ -1,0 +1,450 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// MÓDULO DE AUTENTICACIÓN Y USUARIOS
+// ==========================================
+
+model Usuario {
+  id                Int                @id @default(autoincrement())
+  username          String             @unique @db.VarChar(50)
+  email             String             @unique @db.VarChar(100)
+  password          String             @db.VarChar(255)
+  nombre            String             @db.VarChar(100)
+  apellido          String             @db.VarChar(100)
+  cedula            String             @unique @db.VarChar(20)
+  telefono          String?            @db.VarChar(20)
+  rol               RolUsuario         @default(CAJERO)
+  activo            Boolean            @default(true)
+  imagenPerfil      String?            @db.VarChar(255)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Relaciones
+  ventas            Venta[]
+  aperturasCaja     AperturaCaja[]
+  movimientosInventario MovimientoInventario[]
+  auditLogs         AuditLog[]
+  
+  @@index([username])
+  @@index([email])
+  @@map("usuarios")
+}
+
+enum RolUsuario {
+  ADMINISTRADOR
+  CAJERO
+}
+
+// ==========================================
+// MÓDULO DE SUCURSALES
+// ==========================================
+
+model Sucursal {
+  id                Int                @id @default(autoincrement())
+  nombre            String             @db.VarChar(100)
+  direccion         String             @db.VarChar(255)
+  telefono          String?            @db.VarChar(20)
+  activo            Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Relaciones
+  inventarios       Inventario[]
+  ventas            Venta[]
+  transferencias    TransferenciaSucursal[] @relation("SucursalOrigen")
+  recibidas         TransferenciaSucursal[] @relation("SucursalDestino")
+  
+  @@map("sucursales")
+}
+
+
+// ==========================================
+// MÓDULO DE PRODUCTOS Y CATEGORÍAS
+// ==========================================
+
+model Categoria {
+  id                Int                @id @default(autoincrement())
+  nombre            String             @db.VarChar(100)
+  color             String?            @db.VarChar(20)
+  icono             String?            @db.VarChar(20)
+  activo            Boolean            @default(true)
+  parentId          Int?               // Relación para subcategoría
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Relaciones
+  parent            Categoria?         @relation("Subcategorias", fields: [parentId], references: [id])
+  subcategorias     Categoria[]        @relation("Subcategorias")
+  productos         Producto[]
+  
+  @@index([parentId])
+  @@map("categorias")
+}
+
+model Producto {
+  id                Int                @id @default(autoincrement())
+  nombre            String             @db.VarChar(200)
+  codigoBarras      String?            @unique @db.VarChar(50)
+  codigoInterno     String             @unique @db.VarChar(50)
+  categoriaId       Int
+  precioVenta       Decimal            @db.Decimal(10, 2)
+  precioCompra      Decimal            @db.Decimal(10, 2)
+  stockMinimo       Int                @default(10)
+  unidadMedida      String             @default("UNIDAD") @db.VarChar(20)
+  marca             String?            @db.VarChar(100)
+  imagen            String?            @db.VarChar(255)
+  activo            Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Relaciones
+  categoria         Categoria          @relation(fields: [categoriaId], references: [id])
+  inventarios       Inventario[]
+  detallesVenta     DetalleVenta[]
+  movimientos       MovimientoInventario[]
+  historialPrecios  HistorialPrecio[]
+  transferencias    DetalleTransferencia[]
+  
+  @@index([categoriaId])
+  @@index([codigoBarras])
+  @@index([codigoInterno])
+  @@map("productos")
+}
+
+model HistorialPrecio {
+  id                Int                @id @default(autoincrement())
+  productoId        Int
+  precioAnterior    Decimal            @db.Decimal(10, 2)
+  precioNuevo       Decimal            @db.Decimal(10, 2)
+  costoAnterior     Decimal            @db.Decimal(10, 2)
+  costoNuevo        Decimal            @db.Decimal(10, 2)
+  motivo            String?            @db.Text
+  usuarioId         Int
+  fechaCambio       DateTime           @default(now())
+  
+  // Relaciones
+  producto          Producto           @relation(fields: [productoId], references: [id])
+  
+  @@index([productoId])
+  @@index([fechaCambio])
+  @@map("historial_precios")
+}
+
+// ==========================================
+// MÓDULO DE INVENTARIO
+// ==========================================
+
+model Inventario {
+  id                Int                @id @default(autoincrement())
+  productoId        Int
+  sucursalId        Int
+  stockActual       Int                @default(0)
+  stockReservado    Int                @default(0) // Para pedidos pendientes
+  ultimaActualizacion DateTime         @default(now())
+  
+  // Relaciones
+  producto          Producto           @relation(fields: [productoId], references: [id])
+  sucursal          Sucursal           @relation(fields: [sucursalId], references: [id])
+  movimientos       MovimientoInventario[]
+  
+  @@unique([productoId, sucursalId])
+  @@index([productoId])
+  @@index([sucursalId])
+  @@index([stockActual])
+  @@map("inventarios")
+}
+
+model MovimientoInventario {
+  id                Int                @id @default(autoincrement())
+  inventarioId      Int
+  productoId        Int
+  tipo              TipoMovimiento
+  cantidad          Int
+  cantidadAnterior  Int
+  cantidadNueva     Int
+  motivo            String?            @db.Text
+  referencia        String?            @db.VarChar(100) // Número de factura, venta, etc.
+  usuarioId         Int
+  fechaMovimiento   DateTime           @default(now())
+  
+  // Relaciones
+  inventario        Inventario         @relation(fields: [inventarioId], references: [id])
+  producto          Producto           @relation(fields: [productoId], references: [id])
+  usuario           Usuario            @relation(fields: [usuarioId], references: [id])
+  
+  @@index([inventarioId])
+  @@index([productoId])
+  @@index([tipo])
+  @@index([fechaMovimiento])
+  @@map("movimientos_inventario")
+}
+
+enum TipoMovimiento {
+  ENTRADA_COMPRA       // Ingreso por compra a proveedor
+  ENTRADA_DEVOLUCION   // Devolución de cliente
+  ENTRADA_AJUSTE       // Ajuste manual positivo
+  SALIDA_VENTA         // Venta a cliente
+  SALIDA_MERMA         // Pérdida por rotura, vencimiento
+  SALIDA_AJUSTE        // Ajuste manual negativo
+  TRANSFERENCIA_SALIDA // Transferencia a otra sucursal
+  TRANSFERENCIA_ENTRADA // Recepción de otra sucursal
+}
+
+// ==========================================
+// MÓDULO DE TRANSFERENCIAS ENTRE SUCURSALES
+// ==========================================
+
+model TransferenciaSucursal {
+  id                Int                @id @default(autoincrement())
+  numeroTransferencia String           @unique @db.VarChar(50)
+  sucursalOrigenId  Int
+  sucursalDestinoId Int
+  estado            EstadoTransferencia @default(PENDIENTE)
+  fechaSolicitud    DateTime           @default(now())
+  fechaEnvio        DateTime?
+  fechaRecepcion    DateTime?
+  observaciones     String?            @db.Text
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Relaciones
+  sucursalOrigen    Sucursal           @relation("SucursalOrigen", fields: [sucursalOrigenId], references: [id])
+  sucursalDestino   Sucursal           @relation("SucursalDestino", fields: [sucursalDestinoId], references: [id])
+  detalles          DetalleTransferencia[]
+  
+  @@index([numeroTransferencia])
+  @@index([sucursalOrigenId])
+  @@index([sucursalDestinoId])
+  @@index([estado])
+  @@map("transferencias_sucursales")
+}
+
+model DetalleTransferencia {
+  id                Int                @id @default(autoincrement())
+  transferenciaId   Int
+  productoId        Int
+  cantidadSolicitada Int
+  cantidadEnviada   Int?
+  cantidadRecibida  Int?
+  
+  // Relaciones
+  transferencia     TransferenciaSucursal @relation(fields: [transferenciaId], references: [id], onDelete: Cascade)
+  producto          Producto           @relation(fields: [productoId], references: [id])
+  
+  @@index([transferenciaId])
+  @@index([productoId])
+  @@map("detalles_transferencia")
+}
+
+enum EstadoTransferencia {
+  PENDIENTE
+  EN_TRANSITO
+  RECIBIDA
+  CANCELADA
+}
+
+// ==========================================
+// MÓDULO DE VENTAS
+// ==========================================
+
+model Venta {
+  id                Int                @id @default(autoincrement())
+  numeroVenta       String             @unique @db.VarChar(50)
+  sucursalId        Int
+  usuarioId         Int
+  clienteId         Int?
+  fecha             DateTime           @default(now())
+  subtotal          Decimal            @db.Decimal(10, 2)
+  descuento         Decimal            @default(0) @db.Decimal(10, 2)
+  total             Decimal            @db.Decimal(10, 2)
+  metodoPago        MetodoPago
+  estado            EstadoVenta        @default(COMPLETADA)
+  observaciones     String?            @db.Text
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Relaciones
+  sucursal          Sucursal           @relation(fields: [sucursalId], references: [id])
+  usuario           Usuario            @relation(fields: [usuarioId], references: [id])
+  cliente           Cliente?           @relation(fields: [clienteId], references: [id])
+  detalles          DetalleVenta[]
+  
+  @@index([numeroVenta])
+  @@index([sucursalId])
+  @@index([usuarioId])
+  @@index([clienteId])
+  @@index([fecha])
+  @@map("ventas")
+}
+
+model DetalleVenta {
+  id                Int                @id @default(autoincrement())
+  ventaId           Int
+  productoId        Int
+  cantidad          Int
+  precioUnitario    Decimal            @db.Decimal(10, 2)
+  subtotal          Decimal            @db.Decimal(10, 2)
+  descuento         Decimal            @default(0) @db.Decimal(10, 2)
+  total             Decimal            @db.Decimal(10, 2)
+  
+  // Relaciones
+  venta             Venta              @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  producto          Producto           @relation(fields: [productoId], references: [id])
+  
+  @@index([ventaId])
+  @@index([productoId])
+  @@map("detalles_venta")
+}
+
+enum MetodoPago {
+  EFECTIVO
+  QR
+}
+
+enum EstadoVenta {
+  PENDIENTE
+  COMPLETADA
+  CANCELADA
+  DEVUELTA
+}
+
+// ==========================================
+// MÓDULO DE CLIENTES
+// ==========================================
+
+model Cliente {
+  id                Int                @id @default(autoincrement())
+  nombre            String             @db.VarChar(100)
+  apellido          String             @db.VarChar(100)
+  cedula            String             @unique @db.VarChar(50)
+  telefono          String             @db.VarChar(20)
+  email             String?            @db.VarChar(100)
+  tipo              TipoCliente        @default(REGULAR)
+  descuento         Decimal            @default(0) @db.Decimal(5, 2)
+  totalCompras      Decimal            @default(0) @db.Decimal(10, 2)
+  activo            Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Relaciones
+  ventas            Venta[]
+  
+  @@index([cedula])
+  @@index([telefono])
+  @@map("clientes")
+}
+
+enum TipoCliente {
+  REGULAR
+  FRECUENTE
+  MAYORISTA
+}
+
+// ==========================================
+// MÓDULO DE CAJA
+// ==========================================
+
+model AperturaCaja {
+  id                Int                @id @default(autoincrement())
+  usuarioId         Int
+  fechaApertura     DateTime           @default(now())
+  fechaCierre       DateTime?
+  montoInicial      Decimal            @db.Decimal(10, 2)
+  montoFinal        Decimal?           @db.Decimal(10, 2)
+  totalVentas       Decimal?           @db.Decimal(10, 2)
+  totalEfectivo     Decimal?           @db.Decimal(10, 2)
+  totalQr           Decimal?           @db.Decimal(10, 2)
+  diferencia        Decimal?           @db.Decimal(10, 2)
+  observaciones     String?            @db.Text
+  estado            EstadoCaja         @default(ABIERTA)
+  
+  // Relaciones
+  usuario           Usuario            @relation(fields: [usuarioId], references: [id])
+  movimientos       MovimientoCaja[]
+  
+  @@index([usuarioId])
+  @@index([fechaApertura])
+  @@index([estado])
+  @@map("aperturas_caja")
+}
+
+model MovimientoCaja {
+  id                Int                @id @default(autoincrement())
+  aperturaCajaId    Int
+  tipo              TipoMovimientoCaja
+  monto             Decimal            @db.Decimal(10, 2)
+  metodoPago        MetodoPago
+  concepto          String             @db.VarChar(255)
+  referencia        String?            @db.VarChar(100)
+  fecha             DateTime           @default(now())
+  
+  // Relaciones
+  aperturaCaja      AperturaCaja       @relation(fields: [aperturaCajaId], references: [id], onDelete: Cascade)
+  
+  @@index([aperturaCajaId])
+  @@index([fecha])
+  @@map("movimientos_caja")
+}
+
+enum EstadoCaja {
+  ABIERTA
+  CERRADA
+}
+
+enum TipoMovimientoCaja {
+  VENTA
+  RETIRO
+  INGRESO_EXTRA
+  GASTO
+}
+
+// ==========================================
+// MÓDULO DE AUDITORÍA
+// ==========================================
+
+model AuditLog {
+  id                Int                @id @default(autoincrement())
+  usuarioId         Int
+  accion            String             @db.VarChar(100)
+  tabla             String             @db.VarChar(100)
+  registroId        Int?
+  datosAnteriores   Json?
+  datosNuevos       Json?
+  ipAddress         String?            @db.VarChar(45)
+  userAgent         String?            @db.VarChar(255)
+  createdAt         DateTime           @default(now())
+  
+  // Relaciones
+  usuario           Usuario            @relation(fields: [usuarioId], references: [id])
+  
+  @@index([usuarioId])
+  @@index([accion])
+  @@index([tabla])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ==========================================
+// MÓDULO DE CONFIGURACIÓN
+// ==========================================
+
+model Configuracion {
+  id                Int                @id @default(autoincrement())
+  clave             String             @unique @db.VarChar(100)
+  valor             String             @db.Text
+  descripcion       String?            @db.VarChar(255)
+  tipo              String             @db.VarChar(50) // string, number, boolean, json
+  updatedAt         DateTime           @updatedAt
+  
+  @@map("configuracion")
+}
