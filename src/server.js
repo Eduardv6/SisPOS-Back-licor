@@ -19,8 +19,13 @@ import usersRoutes from "./routes/users.routes.js";
 import openingCashRegistersRoutes from "./routes/openingCashRegisters.routes.js";
 import reportsRoutes from "./routes/reports.routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
+import dashboardRoutes from "./routes/dashboard.routes.js";
+import backupRoutes from "./routes/backup.routes.js";
+import initCronJobs from "./services/cronService.js";
 
 const app = express();
+// Inicializar tareas programadas
+initCronJobs();
 const PORT = process.env.PORT || 5000;
 
 // ==========================================
@@ -103,6 +108,8 @@ app.use("/api/users", usersRoutes);
 app.use("/api/openingCashRegisters", openingCashRegistersRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/backup", backupRoutes);
 
 // Ruta 404
 app.use("*", (req, res) => {

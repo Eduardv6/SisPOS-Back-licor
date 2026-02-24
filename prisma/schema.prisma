@@ -34,6 +34,7 @@ model Usuario {
   aperturasCaja     AperturaCaja[]
   movimientosInventario MovimientoInventario[]
   auditLogs         AuditLog[]
+  backups           Backup[]
   
   @@index([username])
   @@index([email])
@@ -432,6 +433,20 @@ model AuditLog {
   @@index([tabla])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model Backup {
+  id                Int                @id @default(autoincrement())
+  nombre            String             @db.VarChar(255)
+  fecha             DateTime           @default(now())
+  tamano            String             @db.VarChar(50)
+  tipo              String             @default("Manual") // Manual, Automatico
+  usuarioId         Int?
+  
+  // Relaciones
+  usuario           Usuario?           @relation(fields: [usuarioId], references: [id])
+
+  @@map("backups")
 }
 
 // ==========================================

@@ -7,6 +7,7 @@ import {
   getCashRegisterDetail,
   getRecentMovements,
   addMovement,
+  checkCashRegisterStatus,
 } from "../controllers/openingCashRegisterController.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
 
@@ -19,6 +20,7 @@ router.post("/movements", verifyToken, addMovement);
 router.get("/", verifyToken, getCashRegisters);
 router.post("/open", verifyToken, openCashRegister);
 router.put("/:id/close", verifyToken, closeCashRegister);
+router.get("/status", verifyToken, checkCashRegisterStatus);
 router.get("/:id", verifyToken, getCashRegisterDetail);
 
 export default router;

@@ -432,3 +432,21 @@ export const getRecentMovements = async (req, res) => {
     res.status(500).json({ message: "Error al obtener movimientos" });
   }
 };
+
+// Consultar estado de caja de un usuario
+export const checkCashRegisterStatus = async (req, res) => {
+  try {
+    const usuarioId = req.user.id;
+    const cajaAbierta = await prisma.aperturaCaja.findFirst({
+      where: {
+        usuarioId,
+        estado: "ABIERTA",
+      },
+    });
+
+    res.json({ isOpen: !!cajaAbierta });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al verificar estado de caja" });
+  }
+};

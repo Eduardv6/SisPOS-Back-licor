@@ -62,31 +62,40 @@ export const createProduct = async (req, res) => {
       },
     });
 
-    // 2. Initial Inventory (if sucursal and stock provided)
-    if (sucursalId) {
-      const inventory = await prisma.inventario.create({
-        data: {
+    // 2. Initial Inventory (Default to sucursalId 1 if not provided)
+    const activeSucursalId = parseInt(sucursalId) || 1;
+
+    const inventory = await prisma.inventario.upsert({
+      where: {
+        productoId_sucursalId: {
           productoId: newProduct.id,
-          sucursalId: parseInt(sucursalId),
-          stockActual: parseInt(stockInicial) || 0,
+          sucursalId: activeSucursalId,
+        },
+      },
+      update: {
+        stockActual: { increment: parseInt(stockInicial) || 0 },
+      },
+      create: {
+        productoId: newProduct.id,
+        sucursalId: activeSucursalId,
+        stockActual: parseInt(stockInicial) || 0,
+      },
+    });
+
+    // Log initial movement if stock > 0
+    if (parseInt(stockInicial) > 0 && usuarioId) {
+      await prisma.movimientoInventario.create({
+        data: {
+          inventarioId: inventory.id,
+          productoId: newProduct.id,
+          tipo: "ENTRADA_AJUSTE",
+          cantidad: parseInt(stockInicial),
+          cantidadAnterior: 0,
+          cantidadNueva: parseInt(stockInicial),
+          motivo: "Inventario Inicial",
+          usuarioId: parseInt(usuarioId),
         },
       });
-
-      // Log initial movement if stock > 0
-      if (parseInt(stockInicial) > 0 && usuarioId) {
-        await prisma.movimientoInventario.create({
-          data: {
-            inventarioId: inventory.id,
-            productoId: newProduct.id,
-            tipo: "ENTRADA_AJUSTE", // Or ENTRADA_COMPRA as initial
-            cantidad: parseInt(stockInicial),
-            cantidadAnterior: 0,
-            cantidadNueva: parseInt(stockInicial),
-            motivo: "Inventario Inicial",
-            usuarioId: parseInt(usuarioId),
-          },
-        });
-      }
     }
 
     res.json(newProduct);

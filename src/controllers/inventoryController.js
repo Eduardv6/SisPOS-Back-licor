@@ -191,7 +191,7 @@ export const createMovement = async (req, res) => {
     tipo, // ingreso, salida, ajuste
     productoId,
     cantidad,
-    almacenOrigenId,
+    almacenOrigenId = 1,
     motivo,
     observaciones,
     usuarioId,
