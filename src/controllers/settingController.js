@@ -1,4 +1,8 @@
 import { PrismaClient } from "@prisma/client";
+import {
+  uploadToCloudinary,
+  deleteFromCloudinary,
+} from "../config/cloudinary.js";
 
 const prisma = new PrismaClient();
 
@@ -75,7 +79,17 @@ export const uploadLogo = async (req, res) => {
         .json({ message: "No se ha subido ningún archivo" });
     }
 
-    const logoPath = `/uploads/business/${req.file.filename}`;
+    // Delete old logo from Cloudinary if exists
+    const oldLogo = await prisma.configuracion.findUnique({
+      where: { clave: "empresa_logo" },
+    });
+    if (oldLogo?.valor) {
+      await deleteFromCloudinary(oldLogo.valor);
+    }
+
+    // Upload to Cloudinary
+    const result = await uploadToCloudinary(req.file.buffer, "business");
+    const logoPath = result.url;
 
     // Guardar en la base de datos
     await prisma.configuracion.upsert({

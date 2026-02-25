@@ -1,5 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { registrarAuditoria } from "../services/audit.service.js";
+import {
+  uploadToCloudinary,
+  deleteFromCloudinary,
+} from "../config/cloudinary.js";
 
 const prisma = new PrismaClient();
 
@@ -41,7 +45,11 @@ export const createProduct = async (req, res) => {
       sucursalId,
     } = req.body;
 
-    const imagen = req.file ? `/uploads/products/${req.file.filename}` : null;
+    let imagen = null;
+    if (req.file) {
+      const result = await uploadToCloudinary(req.file.buffer, "products");
+      imagen = result.url;
+    }
 
     // 1. Create Product
     const newProduct = await prisma.producto.create({
@@ -155,7 +163,12 @@ export const updateProduct = async (req, res) => {
     };
 
     if (req.file) {
-      updateData.imagen = `/uploads/products/${req.file.filename}`;
+      // Delete old image from Cloudinary if exists
+      if (productoAnterior.imagen) {
+        await deleteFromCloudinary(productoAnterior.imagen);
+      }
+      const result = await uploadToCloudinary(req.file.buffer, "products");
+      updateData.imagen = result.url;
     }
 
     const productoNuevo = await prisma.producto.update({
