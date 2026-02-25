@@ -445,50 +445,59 @@ export const getInventoryStats = async (req, res) => {
 // 6. Cash Stats
 export const getCashStats = async (req, res) => {
   try {
-    // Current open cash registers summary
-    const openRegisters = await prisma.aperturaCaja.findMany({
-      where: { estado: "ABIERTA" },
-      include: { movimientos: true },
-    });
+    const startDate = req.query.startDate
+      ? new Date(`${req.query.startDate}T00:00:00-04:00`)
+      : new Date(new Date().setHours(0, 0, 0, 0));
+    const endDate = req.query.endDate
+      ? new Date(`${req.query.endDate}T23:59:59.999-04:00`)
+      : new Date(new Date().setHours(23, 59, 59, 999));
 
-    let totalEfectivo = 0;
-    let totalOtros = 0;
-    let totalRecaudado = 0;
-
-    openRegisters.forEach((caja) => {
-      let cash = Number(caja.montoInicial);
-      let other = 0;
-
-      caja.movimientos.forEach((m) => {
-        const monto = Number(m.monto);
-        if (m.metodoPago === "EFECTIVO") {
-          if (m.tipo === "VENTA" || m.tipo === "INGRESO_EXTRA") cash += monto;
-          if (m.tipo === "RETIRO" || m.tipo === "GASTO") cash -= monto;
-        } else {
-          if (m.tipo === "VENTA") other += monto;
-        }
-      });
-
-      totalEfectivo += cash;
-      totalOtros += other;
-    });
-
-    totalRecaudado = totalEfectivo + totalOtros;
-
-    // Closing History
-    const history = await prisma.aperturaCaja.findMany({
-      where: { estado: "CERRADA" },
-      orderBy: { fechaCierre: "desc" },
-      take: 20,
-      include: {
-        usuario: true,
-        movimientos: {
-          orderBy: { fecha: "asc" },
+    // Get all registers that were opened within the date range
+    const registers = await prisma.aperturaCaja.findMany({
+      where: {
+        fechaApertura: {
+          gte: startDate,
+          lte: endDate,
         },
       },
+      include: {
+        usuario: true,
+        movimientos: true,
+      },
+      orderBy: { fechaApertura: "desc" },
     });
 
-    const formattedHistory = history.map((h) => {
+    let totalEfectivoVentas = 0;
+    let totalQrVentas = 0;
+    let turnosCount = registers.length;
+
+    // We only sum VENTA type movements for the summary cards
+    // and we also sum INGRESO_EXTRA and subtract RETIRO/GASTO for "Efectivo en Caja"
+    // if we want to reflect the total cash handled.
+    // However, usually "Cajas" report summary cards show total sales by method.
+
+    registers.forEach((h) => {
+      if (h.estado === "CERRADA") {
+        totalQrVentas += Number(h.totalQr || 0);
+        // totalEfectivo in schema for closed registers includes montoInicial + net sales
+        // To get just the sales cash for closed: totalVentas - totalQr
+        totalEfectivoVentas +=
+          Number(h.totalVentas || 0) - Number(h.totalQr || 0);
+      } else {
+        // For open registers, calculate from movements
+        h.movimientos.forEach((m) => {
+          const monto = Number(m.monto);
+          if (m.tipo === "VENTA") {
+            if (m.metodoPago === "EFECTIVO") totalEfectivoVentas += monto;
+            else if (m.metodoPago === "QR") totalQrVentas += monto;
+          }
+        });
+      }
+    });
+
+    const totalRecaudado = totalEfectivoVentas + totalQrVentas;
+
+    const formattedHistory = registers.map((h) => {
       let incomes = 0;
       let retiros = 0;
       const incomeDetails = [];
@@ -515,37 +524,59 @@ export const getCashStats = async (req, res) => {
         }
       });
 
-      const salesCash = Number(h.totalVentas || 0) - Number(h.totalQr || 0);
-      const expectedBalance =
-        Number(h.montoInicial) + salesCash + incomes - retiros;
+      let salesCash = 0;
+      let salesQr = 0;
+      let totalVentas = 0;
+      let expectedBalance = 0;
+
+      if (h.estado === "CERRADA") {
+        salesQr = Number(h.totalQr || 0);
+        totalVentas = Number(h.totalVentas || 0);
+        salesCash = totalVentas - salesQr;
+        // Balance = initial + salesCash + incomes - retiros
+        expectedBalance =
+          Number(h.montoInicial) + salesCash + incomes - retiros;
+      } else {
+        h.movimientos.forEach((m) => {
+          const monto = Number(m.monto);
+          if (m.tipo === "VENTA") {
+            totalVentas += monto;
+            if (m.metodoPago === "EFECTIVO") salesCash += monto;
+            else if (m.metodoPago === "QR") salesQr += monto;
+          }
+        });
+        expectedBalance =
+          Number(h.montoInicial) + salesCash + incomes - retiros;
+      }
 
       return {
         id: h.id,
-        date: h.fechaCierre.toLocaleDateString(),
-        fullDate: h.fechaCierre,
+        date: h.fechaCierre
+          ? h.fechaCierre.toLocaleDateString()
+          : h.fechaApertura.toLocaleDateString(),
+        fullDate: h.fechaCierre || new Date(),
         openingDate: h.fechaApertura,
         cashier: h.usuario.nombre + " " + h.usuario.apellido,
         open: Number(h.montoInicial),
-        sales: Number(h.totalVentas || 0),
+        sales: totalVentas,
         salesCash,
-        salesQr: Number(h.totalQr || 0),
+        salesQr,
         incomes,
         retiros,
         expectedBalance,
-        close: Number(h.montoFinal || 0),
-        diff: Number(h.diferencia || 0),
-        status:
-          Math.abs(Number(h.diferencia)) < 1 ? "Correcto" : "Faltante/Sobrante",
+        close: h.montoFinal ? Number(h.montoFinal) : null,
+        diff: h.diferencia ? Number(h.diferencia) : null,
+        estado: h.estado,
         incomeDetails,
         withdrawalDetails,
       };
     });
 
     res.json({
-      efectivoEnCaja: totalEfectivo,
-      otrosMetodos: totalOtros,
+      efectivoEnCaja: totalEfectivoVentas,
+      otrosMetodos: totalQrVentas,
       totalRecaudado,
-      turnosHoy: openRegisters.length,
+      turnosHoy: turnosCount,
       history: formattedHistory,
     });
   } catch (error) {
