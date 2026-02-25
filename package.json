@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
+    "build": "npx prisma generate && npx prisma migrate deploy",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:reset": "prisma migrate reset",
@@ -20,7 +21,7 @@
     "pos",
     "express",
     "prisma",
-    "mysql"
+    "postgresql"
   ],
   "author": "InventiBar",
   "license": "MIT",
@@ -47,5 +48,8 @@
   },
   "prisma": {
     "seed": "node prisma/seed.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

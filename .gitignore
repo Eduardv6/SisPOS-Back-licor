@@ -1,0 +1,11 @@
+node_modules/
+.env
+public/uploads/
+backups/
+prisma/mysql_export.json
+prisma/export_data.mjs
+prisma/import_data.mjs
+prisma/verify.mjs
+*.log
+npm-debug.log*
+.DS_Store
