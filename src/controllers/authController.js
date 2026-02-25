@@ -75,6 +75,14 @@ export const login = async (req, res) => {
       });
     }
 
+    if (!userFound.activo) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Su cuenta está inactiva. Por favor, contacte al administrador.",
+      });
+    }
+
     const isMatch = await bcrypt.compare(password, userFound.password);
 
     if (!isMatch) {

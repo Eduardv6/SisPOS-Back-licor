@@ -16,11 +16,15 @@ export const verifyToken = async (req, res, next) => {
     // Optional: Check if user still exists
     const user = await prisma.usuario.findUnique({
       where: { id: decoded.id },
-      select: { id: true, rol: true, username: true },
+      select: { id: true, rol: true, username: true, activo: true },
     });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    if (!user.activo) {
+      return res.status(401).json({ message: "Account is inactive" });
     }
 
     req.user = user; // Attach user to request

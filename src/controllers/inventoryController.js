@@ -5,8 +5,11 @@ const prisma = new PrismaClient();
 // Obtener estadísticas para el dashboard
 export const getInventoryStats = async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Obtener la fecha actual en Bolivia (UTC-4)
+    const todayLocal = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/La_Paz",
+    }).format(new Date());
+    const today = new Date(`${todayLocal}T00:00:00-04:00`);
 
     // 1. Ingresos de hoy (suma de cantidades positivas en movimientos de hoy)
     const ingresosHoy = await prisma.movimientoInventario.aggregate({
@@ -131,11 +134,11 @@ export const getMovements = async (req, res) => {
       };
     }
 
-    // Filtro por fechas
+    // Filtro por fechas (ajustado a Bolivia UTC-4)
     if (startDate && endDate) {
       where.fechaMovimiento = {
-        gte: new Date(startDate),
-        lte: new Date(new Date(endDate).setHours(23, 59, 59, 999)),
+        gte: new Date(`${startDate}T00:00:00-04:00`),
+        lte: new Date(`${endDate}T23:59:59.999-04:00`),
       };
     }
 
@@ -256,40 +259,28 @@ export const createMovement = async (req, res) => {
         if (motivo === "venta") tipoMovimientoDB = "SALIDA_VENTA";
         cantidadCambio = -cant; // Negative for output
       } else if (tipo === "ajuste") {
-        // For Ajuste, frontend might send positive or negative or we rely on explicit user choice.
-        // Usually ajuste modal has "Cantidad" input.
-        // Logic: If user says "Ajuste" and rationale is "Daño", it's usually negative.
-        // If rationale is "Inventario Inicial olvido", positive.
-        // Let's assume frontend sends a signed integer OR we infer from context?
-        // The screenshot shows "Ajuste" and "Productos dañados" with "-3".
-        // So frontend sends positive number likely, but logic determines sign?
-        // Or frontend sends signed number?
+        const { operacion } = req.body; // 'ENTRADA' o 'SALIDA'
 
-        // Simplification: We will trust the sign coming from frontend if it allows it, OR
-        // we need a field "tipoAjuste" (Increase/Decrease).
+        let isNegative = false;
 
-        // Standardizing: Assume `cantidad` is absolute. check `motivo` or specific `subtipo`.
-        // If frontend sends generic "ajuste", we default to check if it's positive/negative logic?
-        // WAITING: For now, I'll assume 'ingreso' adds and 'salida' subtracts.
-        // 'ajuste' is tricky. Let's look at frontend modal. It just has "Cantidad".
-        // We'll treat 'ajuste' as: if 'observaciones' or specific param says Decrease, we decrease.
-
-        // BETTER APPROACH: Add `operacion` param (sumar/restar) or deduce from `tipo`.
-        // Screenshot has "Ajuste" -3.
-
-        // Let's assume for now Ajuste is Negative unless specified? No that's risky.
-        // Let's map certain motives to negative.
-        const motivosRestar = [
-          "daño",
-          "merma",
-          "robo",
-          "vencimiento",
-          "perdida",
-          "consumo",
-        ];
-        const isNegative =
-          motivosRestar.some((m) => motivo.toLowerCase().includes(m)) ||
-          motivo.toLowerCase().includes("salida");
+        if (operacion) {
+          isNegative = operacion === "SALIDA";
+        } else {
+          // Fallback a lógica de palabras clave si no viene operacion explícita
+          const motivosRestar = [
+            "daño",
+            "merma",
+            "robo",
+            "vencimiento",
+            "perdida",
+            "consumo",
+            "dañado",
+            "vencido",
+          ];
+          isNegative =
+            motivosRestar.some((m) => motivo.toLowerCase().includes(m)) ||
+            motivo.toLowerCase().includes("salida");
+        }
 
         if (isNegative) {
           if (inventario.stockActual < cant)

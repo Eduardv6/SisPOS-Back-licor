@@ -59,7 +59,7 @@ app.use(
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 1000, // límite de 1000 requests por IP
+  max: 5000, // límite de 5000 requests por IP
   message: "Demasiadas peticiones desde esta IP, intente más tarde",
 });
 app.use("/api/", limiter);

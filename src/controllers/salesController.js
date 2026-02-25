@@ -66,6 +66,8 @@ export const getPosProducts = async (req, res) => {
           stock: totalStock,
           category: p.categoria?.nombre,
           imagen: p.imagen,
+          codigoBarras: p.codigoBarras,
+          codigoInterno: p.codigoInterno,
         };
       })
       .filter((p) => p.stock > 0);
