@@ -274,13 +274,40 @@ export const updateProduct = async (req, res) => {
       }
 
       // Always sync default "Unidad" presentation price with product precioVenta
-      await prisma.presentacion.updateMany({
-        where: {
-          productoId: parseInt(id),
-          esDefault: true,
-        },
+      const existingDefault = await prisma.presentacion.findFirst({
+        where: { productoId: parseInt(id), esDefault: true },
+      });
+      if (existingDefault) {
+        await prisma.presentacion.update({
+          where: { id: existingDefault.id },
+          data: { precioVenta: parseFloat(precioVenta) },
+        });
+      } else {
+        // Create default if it doesn't exist (for products created before presentations system)
+        await prisma.presentacion.create({
+          data: {
+            productoId: parseInt(id),
+            nombre: "Unidad",
+            cantidadBase: 1,
+            precioVenta: parseFloat(precioVenta),
+            esDefault: true,
+          },
+        });
+      }
+    }
+
+    // Always ensure default "Unidad" presentation exists (even if no presentations were sent)
+    const defaultExists = await prisma.presentacion.findFirst({
+      where: { productoId: parseInt(id), esDefault: true },
+    });
+    if (!defaultExists) {
+      await prisma.presentacion.create({
         data: {
+          productoId: parseInt(id),
+          nombre: "Unidad",
+          cantidadBase: 1,
           precioVenta: parseFloat(precioVenta),
+          esDefault: true,
         },
       });
     }
