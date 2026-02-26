@@ -25,22 +25,33 @@ export const getPosProducts = async (req, res) => {
       }
     }
 
-    // Buscar productos con sus inventarios
+    // Buscar productos con sus inventarios y presentaciones
     const products = await prisma.producto.findMany({
       where,
       select: {
         id: true,
         nombre: true,
-        // codigo: true, // codigo no existe en schema, es codigoInterno o codigoBarras
         codigoInterno: true,
         codigoBarras: true,
         precioVenta: true,
         imagen: true,
+        unidadMedida: true,
         categoria: {
           select: { nombre: true },
         },
         inventarios: {
           select: { stockActual: true },
+        },
+        presentaciones: {
+          where: { activo: true },
+          select: {
+            id: true,
+            nombre: true,
+            cantidadBase: true,
+            precioVenta: true,
+            esDefault: true,
+          },
+          orderBy: { cantidadBase: "asc" },
         },
       },
       take: 50,
@@ -57,17 +68,20 @@ export const getPosProducts = async (req, res) => {
           id: p.id,
           nombre: p.nombre,
           codigo: p.codigoInterno,
-          precio: parseFloat(p.precioVenta), // Mapping price to 'precio' or 'price' expected by frontend? Frontend uses 'precioVenta'?
-          // Frontend POS.jsx uses: product.precioVenta (rendering) and product.stock.
-          // Actually frontend implementation:
-          // product.precioVenta (rendering) and product.stock.
-          // So we return 'precioVenta' and 'stock'.
           precioVenta: parseFloat(p.precioVenta),
           stock: totalStock,
           category: p.categoria?.nombre,
           imagen: p.imagen,
           codigoBarras: p.codigoBarras,
           codigoInterno: p.codigoInterno,
+          unidadMedida: p.unidadMedida,
+          presentaciones: p.presentaciones.map((pres) => ({
+            id: pres.id,
+            nombre: pres.nombre,
+            cantidadBase: pres.cantidadBase,
+            precioVenta: parseFloat(pres.precioVenta),
+            esDefault: pres.esDefault,
+          })),
         };
       })
       .filter((p) => p.stock > 0);
@@ -114,13 +128,10 @@ export const createSale = async (req, res) => {
     let subtotal = 0;
     const detallesVenta = [];
 
-    // We need to update INVENTARIO, not Producto.
-    // Assuming Sucursal Principal (ID 1) for now since logic for branches is undefined/removed.
     const sucursalId = 1;
 
     // Validar stock y precios
     for (const item of items) {
-      // Fetch Product and specific Inventory
       const producto = await prisma.producto.findUnique({
         where: { id: item.id },
         include: {
@@ -128,6 +139,7 @@ export const createSale = async (req, res) => {
             where: { sucursalId },
             take: 1,
           },
+          presentaciones: true,
         },
       });
 
@@ -145,21 +157,47 @@ export const createSale = async (req, res) => {
         });
       }
 
-      if (inventario.stockActual < item.quantity) {
+      // Determinar presentación y cantidad real de unidades base
+      let precioUnitario;
+      let cantidadBaseTotal;
+
+      if (item.presentacionId) {
+        // Buscar la presentación
+        const presentacion = producto.presentaciones.find(
+          (p) => p.id === item.presentacionId,
+        );
+        if (!presentacion) {
+          return res.status(400).json({
+            message: `Presentación no encontrada para ${producto.nombre}`,
+          });
+        }
+        precioUnitario = Number(presentacion.precioVenta);
+        cantidadBaseTotal = item.quantity * presentacion.cantidadBase;
+      } else {
+        // Sin presentación → usar precio del producto directamente (compatibilidad)
+        precioUnitario = Number(producto.precioVenta);
+        cantidadBaseTotal = item.quantity;
+      }
+
+      if (inventario.stockActual < cantidadBaseTotal) {
         return res.status(400).json({
-          message: `Stock insuficiente para ${producto.nombre}. Disponible: ${inventario.stockActual}`,
+          message: `Stock insuficiente para ${producto.nombre}. Disponible: ${inventario.stockActual} unidades base, requerido: ${cantidadBaseTotal}`,
         });
       }
 
-      const itemTotal = Number(producto.precioVenta) * item.quantity;
+      const itemTotal = precioUnitario * item.quantity;
       subtotal += itemTotal;
 
       detallesVenta.push({
         productoId: producto.id,
         cantidad: item.quantity,
-        precioUnitario: producto.precioVenta,
+        precioUnitario: precioUnitario,
         subtotal: itemTotal,
-        total: itemTotal, // Asumiendo sin descuento por item por ahora
+        total: itemTotal,
+        // Store real base quantity for inventory deduction
+        _cantidadBaseTotal: cantidadBaseTotal,
+        _inventarioId: inventario.id,
+        _stockAnterior: inventario.stockActual,
       });
     }
 
@@ -180,29 +218,36 @@ export const createSale = async (req, res) => {
           subtotal,
           descuento,
           total,
-          metodoPago: metodoPago, // 'QR' or 'EFECTIVO'
+          metodoPago: metodoPago,
           estado: "COMPLETADA",
           detalles: {
-            create: detallesVenta,
+            create: detallesVenta.map((d) => ({
+              productoId: d.productoId,
+              cantidad: d.cantidad,
+              precioUnitario: d.precioUnitario,
+              subtotal: d.subtotal,
+              total: d.total,
+            })),
           },
         },
       });
 
-      // b) Actualizar Inventario (Stock)
-      for (const item of items) {
-        // Find inventario id again or updateMany
+      // b) Actualizar Inventario (Stock) — descontar en unidades base
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const detalle = detallesVenta[i];
+
         await tx.inventario.updateMany({
           where: {
             productoId: item.id,
             sucursalId,
           },
           data: {
-            stockActual: { decrement: item.quantity },
+            stockActual: { decrement: detalle._cantidadBaseTotal },
           },
         });
 
         // Registrar movimiento inventario (SALIDA_VENTA)
-        // Need to find inventario ID for relation
         const inv = await tx.inventario.findUnique({
           where: {
             productoId_sucursalId: { productoId: item.id, sucursalId },
@@ -214,9 +259,9 @@ export const createSale = async (req, res) => {
             data: {
               inventarioId: inv.id,
               productoId: item.id,
-              tipo: "SALIDA_VENTA", // Ensure this enum exists or use SALIDA
-              cantidad: item.quantity,
-              cantidadAnterior: inv.stockActual + item.quantity, // approximate (before decrement)
+              tipo: "SALIDA_VENTA",
+              cantidad: detalle._cantidadBaseTotal,
+              cantidadAnterior: detalle._stockAnterior,
               cantidadNueva: inv.stockActual,
               motivo: `Venta #${numeroVenta}`,
               referencia: numeroVenta,
@@ -232,7 +277,7 @@ export const createSale = async (req, res) => {
           aperturaCajaId: aperturaCaja.id,
           tipo: "VENTA",
           monto: total,
-          metodoPago: metodoPago, // 'QR' or 'EFECTIVO'
+          metodoPago: metodoPago,
           concepto: `Venta #${numeroVenta}`,
           fecha: new Date(),
         },

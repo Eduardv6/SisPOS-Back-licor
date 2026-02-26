@@ -17,7 +17,11 @@ export const getProducts = async (req, res) => {
       },
       include: {
         categoria: true,
-        inventarios: true, // Include inventory to get stock
+        inventarios: true,
+        presentaciones: {
+          where: { activo: true },
+          orderBy: { cantidadBase: "asc" },
+        },
       },
     });
     res.json(products);
@@ -38,17 +42,30 @@ export const createProduct = async (req, res) => {
       precioCompra,
       stockMinimo,
       unidadMedida,
-      marca, // New field
-      // stockActual - handled via inventory
-      stockInicial, // Optional: for initial inventory
+      marca,
+      stockInicial,
       usuarioId,
       sucursalId,
+      presentaciones, // JSON string: [{ nombre, cantidadBase, precioVenta }]
     } = req.body;
 
     let imagen = null;
     if (req.file) {
       const result = await uploadToCloudinary(req.file.buffer, "products");
       imagen = result.url;
+    }
+
+    // Parse presentaciones if it's a string
+    let parsedPresentaciones = [];
+    try {
+      if (presentaciones) {
+        parsedPresentaciones =
+          typeof presentaciones === "string"
+            ? JSON.parse(presentaciones)
+            : presentaciones;
+      }
+    } catch (e) {
+      console.error("Error parsing presentaciones:", e);
     }
 
     // 1. Create Product
@@ -64,9 +81,27 @@ export const createProduct = async (req, res) => {
         unidadMedida: unidadMedida || "UNIDAD",
         marca: marca || null,
         imagen: imagen || null,
+        // Crear presentación default "Unidad" + las adicionales
+        presentaciones: {
+          create: [
+            {
+              nombre: "Unidad",
+              cantidadBase: 1,
+              precioVenta: parseFloat(precioVenta),
+              esDefault: true,
+            },
+            ...parsedPresentaciones.map((p) => ({
+              nombre: p.nombre,
+              cantidadBase: parseInt(p.cantidadBase),
+              precioVenta: parseFloat(p.precioVenta),
+              esDefault: false,
+            })),
+          ],
+        },
       },
       include: {
         categoria: true,
+        presentaciones: true,
       },
     });
 
@@ -137,13 +172,15 @@ export const updateProduct = async (req, res) => {
     precioVenta,
     unidadMedida,
     marca,
-    sucursalId, // For audit if needed, or if we track specific updates per branch context
+    sucursalId,
+    presentaciones, // JSON string: [{ id?, nombre, cantidadBase, precioVenta }]
   } = req.body;
   const usuarioId = req.user?.id;
 
   try {
     const productoAnterior = await prisma.producto.findUnique({
       where: { id: parseInt(id) },
+      include: { presentaciones: true },
     });
 
     if (!productoAnterior) {
@@ -163,7 +200,6 @@ export const updateProduct = async (req, res) => {
     };
 
     if (req.file) {
-      // Delete old image from Cloudinary if exists
       if (productoAnterior.imagen) {
         await deleteFromCloudinary(productoAnterior.imagen);
       }
@@ -175,6 +211,79 @@ export const updateProduct = async (req, res) => {
       where: { id: parseInt(id) },
       data: updateData,
     });
+
+    // Update presentaciones
+    let parsedPresentaciones = [];
+    try {
+      if (presentaciones) {
+        parsedPresentaciones =
+          typeof presentaciones === "string"
+            ? JSON.parse(presentaciones)
+            : presentaciones;
+      }
+    } catch (e) {
+      console.error("Error parsing presentaciones:", e);
+    }
+
+    if (parsedPresentaciones.length > 0) {
+      // Get existing presentacion IDs
+      const existingIds = productoAnterior.presentaciones.map((p) => p.id);
+      const incomingIds = parsedPresentaciones
+        .filter((p) => p.id)
+        .map((p) => p.id);
+
+      // Delete presentaciones that are no longer in the list (except default)
+      const toDelete = existingIds.filter(
+        (existingId) =>
+          !incomingIds.includes(existingId) &&
+          !productoAnterior.presentaciones.find(
+            (p) => p.id === existingId && p.esDefault,
+          ),
+      );
+
+      if (toDelete.length > 0) {
+        await prisma.presentacion.deleteMany({
+          where: { id: { in: toDelete } },
+        });
+      }
+
+      // Upsert each presentacion
+      for (const pres of parsedPresentaciones) {
+        if (pres.id) {
+          // Update existing
+          await prisma.presentacion.update({
+            where: { id: pres.id },
+            data: {
+              nombre: pres.nombre,
+              cantidadBase: parseInt(pres.cantidadBase),
+              precioVenta: parseFloat(pres.precioVenta),
+            },
+          });
+        } else {
+          // Create new
+          await prisma.presentacion.create({
+            data: {
+              productoId: parseInt(id),
+              nombre: pres.nombre,
+              cantidadBase: parseInt(pres.cantidadBase),
+              precioVenta: parseFloat(pres.precioVenta),
+              esDefault: false,
+            },
+          });
+        }
+      }
+
+      // Always sync default "Unidad" presentation price with product precioVenta
+      await prisma.presentacion.updateMany({
+        where: {
+          productoId: parseInt(id),
+          esDefault: true,
+        },
+        data: {
+          precioVenta: parseFloat(precioVenta),
+        },
+      });
+    }
 
     // Registrar cambios de precio en historial si cambiaron
     if (
@@ -211,7 +320,20 @@ export const updateProduct = async (req, res) => {
       });
     }
 
-    res.json(productoNuevo);
+    // Return updated product with presentaciones
+    const result = await prisma.producto.findUnique({
+      where: { id: parseInt(id) },
+      include: {
+        categoria: true,
+        presentaciones: {
+          where: { activo: true },
+          orderBy: { cantidadBase: "asc" },
+        },
+        inventarios: true,
+      },
+    });
+
+    res.json(result);
   } catch (error) {
     console.error(error);
     if (error.code === "P2002") {

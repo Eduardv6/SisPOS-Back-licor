@@ -115,11 +115,27 @@ model Producto {
   movimientos       MovimientoInventario[]
   historialPrecios  HistorialPrecio[]
   transferencias    DetalleTransferencia[]
+  presentaciones    Presentacion[]
   
   @@index([categoriaId])
   @@index([codigoBarras])
   @@index([codigoInterno])
   @@map("productos")
+}
+
+model Presentacion {
+  id              Int      @id @default(autoincrement())
+  productoId      Int
+  nombre          String   @db.VarChar(100)
+  cantidadBase    Int                           // Cuántas unidades base contiene (1, 20, 6, etc.)
+  precioVenta     Decimal  @db.Decimal(10, 2)
+  activo          Boolean  @default(true)
+  esDefault       Boolean  @default(false)
+
+  producto        Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  @@index([productoId])
+  @@map("presentaciones")
 }
 
 model HistorialPrecio {
