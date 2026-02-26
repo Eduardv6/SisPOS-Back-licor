@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { getDashboardData } from "../controllers/dashboardController.js";
-import { verifyToken } from "../middlewares/auth.middleware.js";
+import { verifyToken, isAdmin } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.get("/", verifyToken, getDashboardData);
+// Solo administrador puede ver el dashboard
+router.get("/", verifyToken, isAdmin, getDashboardData);
 
 export default router;

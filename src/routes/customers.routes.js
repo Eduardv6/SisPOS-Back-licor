@@ -7,17 +7,18 @@ import {
   deleteCustomer,
   getCustomerHistory,
 } from "../controllers/customerController.js";
-import { verifyToken } from "../middlewares/auth.middleware.js";
+import { verifyToken, isAdmin } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
 // Prefix: /api/customers
+// Todas las rutas de clientes son solo para administrador
 
-router.get("/stats", verifyToken, getCustomerStats);
-router.get("/", verifyToken, getCustomers);
-router.post("/", verifyToken, createCustomer);
-router.put("/:id", verifyToken, updateCustomer);
-router.delete("/:id", verifyToken, deleteCustomer);
-router.get("/:id/history", verifyToken, getCustomerHistory);
+router.get("/stats", verifyToken, isAdmin, getCustomerStats);
+router.get("/", verifyToken, isAdmin, getCustomers);
+router.post("/", verifyToken, isAdmin, createCustomer);
+router.put("/:id", verifyToken, isAdmin, updateCustomer);
+router.delete("/:id", verifyToken, isAdmin, deleteCustomer);
+router.get("/:id/history", verifyToken, isAdmin, getCustomerHistory);
 
 export default router;

@@ -1,10 +1,11 @@
 import { Router } from "express";
 import * as reportController from "../controllers/reportController.js";
-import { verifyToken } from "../middlewares/auth.middleware.js";
+import { verifyToken, isAdmin } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.use(verifyToken);
+// Todas las rutas de reportes son solo para administrador
+router.use(verifyToken, isAdmin);
 
 router.get("/dashboard", reportController.getDashboardStats);
 router.get("/sales-chart", reportController.getSalesChart);

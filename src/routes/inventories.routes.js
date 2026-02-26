@@ -8,13 +8,14 @@ import {
   createMovement,
   createTransfer,
 } from "../controllers/inventoryController.js";
-import { verifyToken } from "../middlewares/auth.middleware.js";
+import { verifyToken, isAdmin } from "../middlewares/auth.middleware.js";
 
 // Prefix: /api/inventory
+// Todas las rutas de inventario son solo para administrador
 
-router.get("/stats", verifyToken, getInventoryStats);
-router.get("/movements", verifyToken, getMovements);
-router.post("/movements", verifyToken, createMovement);
-router.post("/transfer", verifyToken, createTransfer);
+router.get("/stats", verifyToken, isAdmin, getInventoryStats);
+router.get("/movements", verifyToken, isAdmin, getMovements);
+router.post("/movements", verifyToken, isAdmin, createMovement);
+router.post("/transfer", verifyToken, isAdmin, createTransfer);
 
 export default router;

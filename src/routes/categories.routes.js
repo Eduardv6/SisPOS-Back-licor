@@ -6,6 +6,7 @@ import {
   updateCategory,
   deleteCategory,
 } from "../controllers/categoryController.js";
+import { verifyToken, isAdmin } from "../middlewares/auth.middleware.js";
 import { validateSchema } from "../middlewares/validate.middleware.js";
 import {
   createCategorySchema,
@@ -14,10 +15,25 @@ import {
 
 const router = Router();
 
-router.get("/", getCategories);
-router.get("/:id", getCategory);
-router.post("/", validateSchema(createCategorySchema), createCategory);
-router.put("/:id", validateSchema(updateCategorySchema), updateCategory);
-router.delete("/:id", deleteCategory);
+// GET: todos los usuarios autenticados
+router.get("/", verifyToken, getCategories);
+router.get("/:id", verifyToken, getCategory);
+
+// POST, PUT, DELETE: solo administrador
+router.post(
+  "/",
+  verifyToken,
+  isAdmin,
+  validateSchema(createCategorySchema),
+  createCategory,
+);
+router.put(
+  "/:id",
+  verifyToken,
+  isAdmin,
+  validateSchema(updateCategorySchema),
+  updateCategory,
+);
+router.delete("/:id", verifyToken, isAdmin, deleteCategory);
 
 export default router;
