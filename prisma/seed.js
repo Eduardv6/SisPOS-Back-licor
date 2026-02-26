@@ -131,28 +131,6 @@ async function main() {
   console.log(`   👤 Admin - username: admin, password: admin123`);
 
   // ==========================================
-  // ASIGNACIONES USUARIO-SUCURSAL
-  // ==========================================
-  console.log("🔗 Asignando usuarios a sucursales...");
-
-  await Promise.all([
-    prisma.asignacionUsuarioSucursal.create({
-      data: {
-        usuarioId: usuarios[1].id, // Ana López
-        sucursalId: sucursales[0].id, // Sucursal Centro
-      },
-    }),
-    prisma.asignacionUsuarioSucursal.create({
-      data: {
-        usuarioId: usuarios[2].id, // Carlos Méndez
-        sucursalId: sucursales[1].id, // Sucursal Norte
-      },
-    }),
-  ]);
-
-  console.log("✅ Asignaciones creadas");
-
-  // ==========================================
   // PRODUCTOS
   // ==========================================
   console.log("🏷️  Creando productos...");
