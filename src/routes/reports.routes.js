@@ -13,5 +13,6 @@ router.get("/top-products", reportController.getTopProducts);
 router.get("/products", reportController.getProductStats);
 router.get("/inventory", reportController.getInventoryStats);
 router.get("/cash", reportController.getCashStats);
+router.get("/sales-history", reportController.getSalesHistory);
 
 export default router;

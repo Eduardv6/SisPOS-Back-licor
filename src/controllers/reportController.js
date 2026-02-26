@@ -584,3 +584,60 @@ export const getCashStats = async (req, res) => {
     res.status(500).json({ message: "Error al obtener estadísticas de caja" });
   }
 };
+
+// 7. Sales History
+export const getSalesHistory = async (req, res) => {
+  try {
+    const startDate = req.query.startDate
+      ? new Date(`${req.query.startDate}T00:00:00-04:00`)
+      : null;
+    const endDate = req.query.endDate
+      ? new Date(`${req.query.endDate}T23:59:59.999-04:00`)
+      : null;
+
+    const where = { estado: "COMPLETADA" };
+    if (startDate && endDate) {
+      where.fecha = { gte: startDate, lte: endDate };
+    }
+
+    const ventas = await prisma.venta.findMany({
+      where,
+      include: {
+        detalles: {
+          include: {
+            producto: {
+              select: { nombre: true },
+            },
+          },
+        },
+        usuario: {
+          select: { nombre: true, apellido: true },
+        },
+      },
+      orderBy: { fecha: "desc" },
+      take: 100,
+    });
+
+    const result = ventas.map((v) => ({
+      id: v.id,
+      numeroVenta: v.numeroVenta,
+      fecha: v.fecha,
+      productos: v.detalles.map((d) => ({
+        nombre: d.producto?.nombre || "Desconocido",
+        cantidad: d.cantidad,
+        precioUnitario: Number(d.precioUnitario),
+        subtotal: Number(d.subtotal),
+      })),
+      usuario: `${v.usuario?.nombre || ""} ${v.usuario?.apellido || ""}`.trim(),
+      metodoPago: v.metodoPago,
+      subtotal: Number(v.subtotal),
+      descuento: Number(v.descuento),
+      total: Number(v.total),
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al obtener historial de ventas" });
+  }
+};
