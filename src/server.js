@@ -40,21 +40,7 @@ app.use(
 );
 
 // CORS
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [
-  `http://localhost:${PORT}`,
-];
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-  }),
-);
+app.use(cors());
 
 // Rate limiting
 const limiter = rateLimit({
@@ -144,8 +130,9 @@ app.use((err, req, res, next) => {
 // INICIAR SERVIDOR
 // ==========================================
 
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en puerto http://localhost:${PORT}`);
+const HOST = "0.0.0.0";
+app.listen(PORT, HOST, () => {
+  console.log(`Servidor corriendo en http://${HOST}:${PORT}`);
 });
 
 // Manejo de errores no capturados
